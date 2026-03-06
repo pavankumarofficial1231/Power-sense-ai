@@ -49,6 +49,7 @@ class OverrideRequest(BaseModel):
     room_id: str
     active: bool
     override_by: Optional[str] = "Faculty"
+    override_type: Optional[str] = "force_on"
 
 
 class SimulationControl(BaseModel):
@@ -84,6 +85,7 @@ def get_rooms():
             "fans_on": rs["fans_on"],
             "override_active": rs["override_active"],
             "override_by": rs["override_by"],
+            "override_type": rs.get("override_type"),
             "current_power_kw": rs["current_power_kw"],
         })
     return {"rooms": rooms, "current_time": state["current_time"]}
@@ -159,7 +161,7 @@ def get_simulation_state():
 @app.post("/api/override")
 def set_override(req: OverrideRequest):
     """Set manual faculty override for a room."""
-    success = simulation.set_override(req.room_id, req.active, req.override_by)
+    success = simulation.set_override(req.room_id, req.active, req.override_by, req.override_type)
     if not success:
         raise HTTPException(status_code=404, detail=f"Room {req.room_id} not found")
     return {
@@ -167,6 +169,7 @@ def set_override(req: OverrideRequest):
         "room_id": req.room_id,
         "override_active": req.active,
         "override_by": req.override_by if req.active else None,
+        "override_type": req.override_type if req.active else None,
     }
 
 

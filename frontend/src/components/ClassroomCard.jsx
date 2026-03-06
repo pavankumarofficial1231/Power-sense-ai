@@ -173,15 +173,34 @@ export default function ClassroomCard({
                     </div>
 
                     {/* Override */}
-                    <button
-                        className={`override-btn ${room.override_active ? 'active' : ''}`}
-                        onClick={e => { e.stopPropagation(); onOverride(room.id, !room.override_active) }}
-                    >
-                        {room.override_active ? '🔓 Remove Faculty Override' : '🔒 Faculty Override (Force On)'}
-                    </button>
-                    {room.override_active && (
-                        <div style={{ textAlign: 'center', fontSize: '.62rem', color: 'var(--c-orange)' }}>
-                            Manual override active — all devices forced ON
+                    {!room.override_active ? (
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                            <button
+                                className="override-btn"
+                                onClick={e => { e.stopPropagation(); onOverride(room.id, true, 'force_on') }}
+                            >
+                                🔒 Force ON
+                            </button>
+                            <button
+                                className="override-btn"
+                                style={{ background: 'rgba(255,71,87,0.1)', color: 'var(--c-red)', borderColor: 'rgba(255,71,87,0.4)', boxShadow: 'none' }}
+                                onClick={e => { e.stopPropagation(); onOverride(room.id, true, 'force_off') }}
+                            >
+                                🔒 Force OFF
+                            </button>
+                        </div>
+                    ) : (
+                        <div>
+                            <button
+                                className="override-btn active"
+                                style={room.override_type === 'force_off' ? { background: 'var(--c-red)', boxShadow: '0 0 10px var(--c-red)' } : {}}
+                                onClick={e => { e.stopPropagation(); onOverride(room.id, false) }}
+                            >
+                                🔓 Remove Faculty Override
+                            </button>
+                            <div style={{ textAlign: 'center', fontSize: '.62rem', color: room.override_type === 'force_off' ? 'var(--c-red)' : 'var(--c-orange)', marginTop: '7px' }}>
+                                Manual override active — all devices forced {room.override_type === 'force_off' ? 'OFF' : 'ON'}
+                            </div>
                         </div>
                     )}
                 </div>

@@ -22,13 +22,14 @@
 - **Interactive Scrubber**: The dashboard has an interactive timeline slider that lets administrators drag to "time travel" through the day.
 - Fast-forward speed controls (1x, 2x, 4x) to simulate full-day energy cycles. 
 - Real-time calculations of kWh saved, Cost saved, and **CO₂ Reduced (Green impact)**.
+- **Dynamic Digital Twin**: Lush grass landscape, solid architectural perimeter walls with institutional branding, and flowering decorative trees.
 
 ### 4. 🎛️ Tactical Data Overlays
 - **Floating HUD Glass Panels**: Overlapping the R3F scene.
 - **Neon LED Equalizer**: A cool CSS-based LED equalizer visualizing live power consumption per room against total capacity.
 - **Efficiency Heatmap**: Displays accurate real-time energy efficiency percentages. The math is simple but effective: `100% - (current_power / max_possible_capacity)`. If the room is physically occupied but the AI turns off the AC, efficiency skyrockets!
 - **Historical Busy Heatmap**: Toggle between the live efficiency maps and historical schedule grids for 12-hour block insights.
-- **Faculty Override**: A manual toggle that forces the simulation to re-route energy back into a room, overriding the AI.
+- **Faculty Override**: Dual-mode manual toggle (**Force ON** or **Force OFF**) that overrides the AI. Force OFF shuts down all building visuals and pulses a red roof beacon as an administrative warning.
 
 ---
 

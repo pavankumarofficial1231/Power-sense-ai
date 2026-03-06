@@ -1,77 +1,145 @@
 # 🧠 PowerSense AI — Project Memory Base
 
-**Status:** Hackathon Ready (March 2026) 🚀
+**Status:** Hackathon Ready (March 2026) 🚀  
 **Goal:** Track state, architecture, and UI implementations for team onboarding during the Hackathon.
+
+---
 
 ## 🗂️ Core Architecture
 
-The system is a separated full-stack application.
-- **Backend (Python / FastAPI):** Handles the database (`hospitality_db.sqlite`), simulation engine (`simulation.py`), and machine learning model (`model.py`).
-- **Frontend (React / Vite):** Handles the massive interactive UI (`react-three-fiber` + `three.js`), calling the backend API every tick based on simulation speed.
+Full-stack separated application:
+- **Backend (Python / FastAPI):** `simulation.py`, `model.py`, `database.py`, `main.py` — serves REST API at `http://localhost:8000/api`
+- **Frontend (React / Vite):** React Three Fiber 3D scene + 2D CSS Grid UI — served at `http://localhost:5174`
+- **Real-time Sync:** Frontend polls backend every 3 seconds for `rooms`, `predictions`, `energy-usage`, and `stats`
 
 ---
 
 ## 🏗️ Backend Module Overview
 
-1. `main.py`
-   - FastAPI server instance and API routing.
-   - Hosts endpoints that read simulation states (`GET`) or control simulation time blocks (`POST`).
-   
-2. `model.py`
-   - Scikit-Learn RandomForest implementation.
-   - **Trained on Dataset:** Uses `campus_energy_data.csv` (historical energy/occupancy logs) to fit the model so it learns real-world student behaviors.
-   - Features: `[hour, day_of_week, scheduled_class, past_occupancy, wifi_devices]`.
-   - Has two main functions: `predict()` and `predict_30min_ahead()`.
-   
-3. `simulation.py`
-   - Central state manager simulating the passage of time over a 15-minute resolution timeline.
-   - Applies the AI's recommendations (`Keep Power On`, `Reduce Power`, `Turn Off All`) and dynamically calculates kWh saved based on fixed constants (`ENERGY_AC=1.5kW`, `ENERGY_LIGHTS=0.4kW`).
-
-4. `database.py`
-   - SQLite table definitions and fake initial seed data representing campus classrooms.
+| File | Purpose |
+|------|---------|
+| `main.py` | FastAPI routing. Endpoints: `/api/rooms`, `/api/simulate`, `/api/override`, `/api/predictions`, `/api/stats`, `/api/energy-usage` |
+| `model.py` | RandomForestClassifier predicting `is_occupied` from `[hour, dow, scheduled_class, past_occupancy, wifi_devices]`. Two exports: `predict()` and `predict_30min_ahead()` |
+| `simulation.py` | 15-minute time-step engine. Resets to **Monday 09:00** on reset. Applies AI recommendations → `turn_off_all`, `reduce_power`, `keep_power_on`. Calculates kWh, cost, CO₂ saved |
+| `database.py` | 8 rooms across Blocks A–D. Constants: `ENERGY_LIGHTS=0.1kW`, `ENERGY_FANS=0.2kW`, `ENERGY_AC=1.5kW`, `COST_PER_KWH=8.0 ₹`, `CO2_PER_KWH=0.82 kg` |
+| `data_processor.py` | Generates synthetic historical training data and runs the model training pipeline |
 
 ---
 
-## 🔮 Frontend Visualization Overview
+## 🔮 Frontend Architecture
 
-The frontend was massively overhauled into an Iron Man style **Holographic 3D Command Area**.
+### Layout (CSS Grid — 4 zones)
+```
+┌─────────────────────────────────────────────────────┐
+│  ⚡ PowerSense AI │ Time │ AI Status │ Alerts        │  Header (54px)
+├──────────┬──────────────────────────────┬────────────┤
+│ Controls │                              │  Sectors   │
+│ Play/Step│   3D Campus Digital Twin     │  per room  │
+│ Timeline │   CampusMap3D.jsx fills all  │  (A101..)  │
+│ Stats    │                              │            │
+│ Grid Cap │                              │            │
+├──────────┴──────────────────────────────┴────────────┤
+│ 📊 Live Energy │ 🤖 AI Forecast │ 🔁 Demand Response │  Bottom (168px)
+└─────────────────────────────────────────────────────┘
+```
 
-**Core Files:**
-- `App.jsx`
-  - The orchestrator. Contains the `Canvas` background wrapper (`.canvas-wrapper`) and floating UI flex overlay (`.ui-overlay`). 
-  - Manages fetching API data, controlling simulation (`set_time`, `speed`), and tracking hover/click events for UI interaction on the 3D map.
-- `index.css`
-  - Deep dark UI tokens with extensive CSS variables for neon glassmorphism effects (`--bg-base`, `--bg-card`, `--glow-cyan`).
-  - Contains `.bolo-tag` popups, `.ui-left` absolute layout constraints, and the custom `.scrubber-track` for timeline jumping.
-- `components/CampusMap3D.jsx`
-  - A React Three Fiber (`R3F`) 3D Scene.
-  - Generates the mesh building blocks, glowing energy floor mesh, pulsating Power Core globe, and the animated energy lines.
-  - Uses `@react-three/drei`'s `<Html />` component for anchored 2D popups overlaid inside 3D space.
-- `components/EnergyDashboard.jsx`
-  - React/CSS-based custom LED equalizer UI component visualising power consumption per grid room dynamically via neon blocks.
-- `components/EnergyHeatmap.jsx`
-  - Two modes: Live **Efficiency Heatmap** (which accurately calculates UI efficiency as `% power saved versus maximum possible draw`) and a **Busy Time** schedule block overview.
-- `components/ClassroomCard.jsx`
-  - Complex dynamic cards found in the right-side grid overlay (Campus Sectors list).
-  - Conditionally renders inner UI elements like `<WifiSignal />` mini-bars, toggleable `Manual Overrides`, and live multi-colored recommendation tags.
-
----
-
-## 🪲 Known Hacks / Watch-Outs
-
-- **Faculty Overrides in R3F (`CampusMap3D.jsx`):** 
-  Energy streams initially checked `status === 'occupied'`, but now explicitly check `room?.override_active`. If adding new statuses (e.g., `maintenance_mode`), update the boolean check there.
-- **Layout Overlaps (`index.css`):**
-  Initially, `.ui-header` and `.ui-charts` were absolutely grouped in corners, causing overlaps on short screens. They are now placed relative within a `pointer-events: none` `.ui-left` flex container with `justify-content: space-between` to always prevent grid crashes. Both are assigned `pointer-events: auto` explicitly. 
-- **Time Sync (`Simulate API`):**
-  When dragging the timeline scrubber in `App.jsx`, a `set_time` POST action sends the current `{"hour": 14}` to the backend `simulation.py` clock manually, allowing instant frontend/backend timeline scrubbing without timezone bugs.
+### Key Files
+| File | Role |
+|------|------|
+| `App.jsx` | Orchestrator. CSS grid layout. 3s polling. Demand-response engine. Simulation controls |
+| `index.css` | Global design tokens. Glassmorphism + neon theme. Grid + panel styles |
+| `CampusMap3D.jsx` | Full 3D campus scene (see below) |
+| `EnergyDashboard.jsx` | LED equalizer bars per room — real-time kW visualization |
+| `AiForecastPanel.jsx` | Power-down countdown + probability bars from `/api/predictions` |
+| `ClassroomCard.jsx` | Per-room card in right panel with override toggle |
 
 ---
 
-## 📝 Roadmap for Day 2 Team
+## 🏫 3D Campus Scene (`CampusMap3D.jsx`)
 
-1. ~~**Interactive Scrubber** (Built!)~~
-2. ~~**Better Chart** (Replaced standard D3 solid bars with CSS LED glow Equalizers!)~~
-3. ~~**Floating Tags** (Built via R3F Drei tags inside `CampusMap3D`!)~~
-4. **Hardware Integrations (Optional):** We can connect an Arduino ESP8266 or similar to POST actual Wi-Fi ping counts to the backend rather than simulating `wifi_devices`, dramatically stepping this up for the judges!
-5. **Dashboard Animations:** Trigger GSAP transitions linking the room sector clicks to the React Three Fiber Camera coordinates (Camera smooth-fly action).
+### Campus Layout
+```
+[NORTH / BACK]
+    CommDish (satellite RX, z=-22)
+    BatteryBank (z=-4, x=-9.5)    SolarArray (z=-4, x=9.5)
+
+    Block A  Block B  Block C  Block D  (z=-10, back row)
+         ═══ Main Road (z=-1) ═══
+    Block A  Block B  Block C  Block D  (z=8, front row)
+
+    Microgrid Controller (z=-1, centre)
+    PowerHub / Transformer (x=22, right side)
+
+    Parking (x=20, z=16)        (Benches + Trees scattered)
+
+🚩 Flag    [Gate: POWERSENSE CAMPUS]    🚩 Flag
+           (z=24, viewer entrance)
+[SOUTH / FRONT — VIEWER SIDE]
+```
+
+### Scene Components
+| Component | Description |
+|-----------|-------------|
+| `SkyDome` | Blue day sky (#1a75c8), orange dawn, black night. 320 twinkling stars. Sun arc + halo. Moon |
+| `Cloud` | 5 fluffy clouds drifting slowly across daytime sky. Hidden at night |
+| `StreetLight` | 29 lamp posts. Auto-ON at simHour < 7 or ≥ 18. Warm amber point light |
+| `Building` | 3 floors, realistic windows, HVAC, entrance canopy. Power state drives ALL lighting |
+| `PowerHub` | Transformer hub at (22,0,-1). Rotating icosahedron core, energy rings, Bezier streams |
+| `EnergyStream` | Bezier particle flow from hub to each building. Speed reflects power state |
+| `MicrogridController` | Centre kiosk. Shows live total load + efficiency from real-time data |
+| `BatteryStorage` | 3-cell bank. Charge% from `stats.total_energy_saved_kwh` |
+| `SolarArray` | 5 panels. Generation kW computed from simHour via sin curve |
+| `CommTower` | Compact sat-dish on pedestal. 6 sequential red LED ring. Rotating dish |
+| `CampusGate` | Entrance arch with 2 pillars, gold "🎓 POWERSENSE CAMPUS" label, gate bars |
+| `FlagPole` | Two waving blue flags flanking the gate |
+| `WalkingStudent` | 5 animated tiny figures on looped paths between buildings |
+| `Bench` | Park benches at campus centre |
+| `TinyCar` | 4 parked cars in the parking lot |
+| `CampusGround` | Lush grass green (#1a472a), realistic asphalt roads with golden markings, building pads, 12 trees (some with pink/white flowers) |
+| `CampusFence` | Solid stone-grey perimeter walls with decorative stripes, support pillars, and 3D entrance signs: "Gitxtribe" & "Geniusphere" |
+| `ZoneLabel` | Floating "BLOCK A/B/C/D" between the two building rows |
+| `DRLinks` | Dashed demand-response arc in 3D linking rooms suggested for consolidation |
+
+### Power State Logic (CRITICAL)
+isPowered = lights_on                 // Strictly tied to actual power state
+isWarn    = status === 'predicted_empty_soon' && !override_active
+isOff     = !isPowered && !isWarn
+```
+*Building visuals (glow, beacon, windows) now react correctly to both Force ON and Force OFF overrides.*
+
+Window colors, edge glow, roof beacon → all driven from `isPowered / isWarn / isOff`
+
+### Real-Time Data Flow
+- `rooms` prop → `roomMap[id]` → each Building + PowerHub + MicrogridController
+- `preds` → `predMap[id]` → Building warning badge, AI countdown chip
+- `stats.total_energy_saved_kwh` → BatteryStorage charge %
+- `simHour` → SkyDome sky color, sun/moon position, Cloud visibility, StreetLight ON/OFF, SolarArray generation, EnvCtrl ambient intensity
+
+---
+
+## 🐛 Known Watch-Outs
+
+| Issue | Fix |
+|-------|-----|
+| Faculty Override must keep building LIT | `isPowered = is_occupied \|\| override_active` in `getPowerState()` |
+| Reset must go to Monday not Saturday | `monday = now - timedelta(days=now.weekday())` in `simulation.py` |
+| Street lights auto time | `isNight = simHour < 7 \|\| simHour >= 18` in `StreetLight` component |
+| Energy dashboard fill in bottom bar | `height: '100%'` + `display: flex; flex-direction: column; min-height: 0` |
+| Git push blocked | GitHub account `pavankumarofficial1231` needs to fork `Sathvik-Nagesh/Power-sense-ai` first |
+
+---
+
+## 📝 Day 2 Roadmap
+
+1. ~~CSS Grid Layout (Done ✅)~~
+2. ~~Realistic 3D Buildings with power-state lighting (Done ✅)~~
+3. ~~Day/Night sky with stars, sun, moon, clouds (Done ✅)~~
+4. ~~Street lights auto ON/OFF by time (Done ✅)~~
+5. ~~Campus Entrance Gate + Flag Poles (Done ✅)~~
+6. ~~Demand Response Engine (Done ✅)~~
+7. ~~Reset → Monday 09:00 fix (Done ✅)~~
+8. ~~Campus Aesthetics: Solid stone walls, lush grass floor, and flowering trees (Done ✅)~~
+9. ~~Faculty Override ON/OFF mechanism with red beacon feedback (Done ✅)~~
+10. **Push to GitHub** — Fork repo, then `git push origin feature/rebuilt-campus-ui`
+9. **Hardware Integration (Optional):** Connect Arduino ESP8266 to POST real Wi-Fi ping counts to `/api/override` or a new `/api/sensor` endpoint
+10. **Mobile Responsive:** Add breakpoints to `index.css` for iPad display at demo booth

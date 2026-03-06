@@ -15,9 +15,8 @@ class SimulationEngine:
     def __init__(self):
         # Always simulate a weekday (Monday 9am) so campus is busy for demos
         now = datetime.now()
-        # Find most recent Monday (weekday 0), or keep today if Mon-Fri
-        days_since_monday = now.weekday() if now.weekday() < 5 else 0
-        monday = now - timedelta(days=days_since_monday)
+        # Find most recent Monday (weekday 0)
+        monday = now - timedelta(days=now.weekday())
         self.current_time = monday.replace(hour=9, minute=0, second=0, microsecond=0)
         self.is_running = False
         self.speed = 1  # 1x, 2x, 4x
@@ -42,6 +41,7 @@ class SimulationEngine:
                 "fans_on": True,
                 "override_active": False,
                 "override_by": None,
+                "override_type": None,
                 "current_power_kw": room["base_consumption"],
                 "wifi_devices": 0,
                 "scheduled_class": False,
@@ -120,13 +120,16 @@ class SimulationEngine:
                         room["base_consumption"] + ENERGY_LIGHTS + ENERGY_FANS + ENERGY_AC, 2
                     )
             else:
-                # Override is active — keep everything on
-                state["lights_on"] = True
-                state["ac_on"] = True
-                state["fans_on"] = True
-                state["current_power_kw"] = round(
-                    room["base_consumption"] + ENERGY_LIGHTS + ENERGY_FANS + ENERGY_AC, 2
-                )
+                if state.get("override_type") == "force_off":
+                    self._apply_savings(state, room, lights=False, ac=False, fans=False)
+                else:
+                    # Override is active — keep everything on
+                    state["lights_on"] = True
+                    state["ac_on"] = True
+                    state["fans_on"] = True
+                    state["current_power_kw"] = round(
+                        room["base_consumption"] + ENERGY_LIGHTS + ENERGY_FANS + ENERGY_AC, 2
+                    )
 
             # Calculate energy recommendation
             recommendation = self._get_recommendation(state)
@@ -190,15 +193,42 @@ class SimulationEngine:
         else:
             return "keep_power_on"
 
-    def set_override(self, room_id: str, active: bool, override_by: Optional[str] = "Faculty") -> bool:
+    def set_override(self, room_id: str, active: bool, override_by: Optional[str] = "Faculty", override_type: Optional[str] = "force_on") -> bool:
         """Set manual override for a room."""
         if room_id in self.room_states:
-            self.room_states[room_id]["override_active"] = active
-            self.room_states[room_id]["override_by"] = override_by if active else None
+            state = self.room_states[room_id]
+            state["override_active"] = active
+            state["override_by"] = override_by if active else None
+            state["override_type"] = override_type if active else None
+            
+            room_cfg = next((r for r in ROOMS if r["id"] == room_id), None)
+            
             if active:
-                self.room_states[room_id]["lights_on"] = True
-                self.room_states[room_id]["ac_on"] = True
-                self.room_states[room_id]["fans_on"] = True
+                if override_type == "force_off":
+                    if room_cfg:
+                        self._apply_savings(state, room_cfg, lights=False, ac=False, fans=False)
+                else:
+                    state["lights_on"] = True
+                    state["ac_on"] = True
+                    state["fans_on"] = True
+                    if room_cfg:
+                        state["current_power_kw"] = round(room_cfg["base_consumption"] + ENERGY_LIGHTS + ENERGY_FANS + ENERGY_AC, 2)
+            else:
+                # Override removed -> instantly instantly re-apply simulation physics
+                pred_now = state["predicted_occupancy"]
+                if room_cfg:
+                    if pred_now < 0.2:
+                        self._apply_savings(state, room_cfg, lights=False, ac=False, fans=False)
+                    elif pred_now < 0.5:
+                        self._apply_savings(state, room_cfg, lights=True, ac=False, fans=True)
+                    else:
+                        state["lights_on"] = True
+                        state["ac_on"] = True
+                        state["fans_on"] = True
+                        state["current_power_kw"] = round(room_cfg["base_consumption"] + ENERGY_LIGHTS + ENERGY_FANS + ENERGY_AC, 2)
+
+            # Instantly fix the recommendation attribute
+            state["recommendation"] = self._get_recommendation(state)
             return True
         return False
 

@@ -69,14 +69,14 @@ export default function AlertTicker({ rooms = [], preds = [] }) {
         prevRef.current = Object.fromEntries(rooms.map(r => [r.id, { ...r }]))
 
         if (newAlerts.length) {
-            setAlerts(prev => [...newAlerts, ...prev].slice(0, 3)) // keep max 3
+            setAlerts(prev => [...newAlerts, ...prev].slice(0, 5)) // keep max 5
         }
     }, [rooms])
 
-    // Auto-expire old alerts after 4s
+    // Auto-expire old alerts after 12s
     useEffect(() => {
         const timer = setInterval(() => {
-            const cutoff = Date.now() - 4000
+            const cutoff = Date.now() - 12000
             setAlerts(prev => prev.filter(a => a.time > cutoff))
         }, 1000)
         return () => clearInterval(timer)

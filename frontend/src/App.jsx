@@ -115,12 +115,12 @@ export default function App() {
     } catch { }
   }, [fetchAll])
 
-  const override = useCallback(async (id, active) => {
+  const override = useCallback(async (id, active, type='force_on') => {
     playOverride()
     try {
       await fetch(`${API}/override`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ room_id: id, active, override_by: 'Faculty' }),
+        body: JSON.stringify({ room_id: id, active, override_by: 'Faculty', override_type: type }),
       })
       fetchAll()
     } catch { }
@@ -188,7 +188,19 @@ export default function App() {
   const energyMap = Object.fromEntries(energy.map(e => [e.room, e]))
   const activeRooms = rooms.filter(r => r.is_occupied || r.override_active).length
   const totalPower  = rooms.reduce((s, r) => s + (r.current_power_kw || 0), 0)
-  const demandSuggestions = useMemo(() => computeDemandResponse(rooms), [rooms])
+  const [demandSuggestions, setDemandSuggestions] = useState([])
+  const lastSugUpdate = useRef(0)
+
+  useEffect(() => {
+    const fresh = computeDemandResponse(rooms)
+    const now = Date.now()
+    if (fresh.length > 0) {
+      setDemandSuggestions(fresh)
+      lastSugUpdate.current = now
+    } else if (now - lastSugUpdate.current > 20000) {
+      setDemandSuggestions([])
+    }
+  }, [rooms])
 
   return (
     <div className="app-shell">
