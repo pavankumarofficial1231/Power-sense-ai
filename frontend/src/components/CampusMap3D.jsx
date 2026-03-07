@@ -785,56 +785,256 @@ function ZoneLabel({pos,label,sub}){
   )
 }
 
-// ── Building ──
+
+// ── Indoor Students: visible in windows when powered ON ──
+function InSchoolStudents({count=4, nF, fH, D, isPowered}){
+    if(!isPowered) return null
+    const z = D / 2 - 0.06   // flush against front glass
+    const colors = ['#e74c3c','#3498db','#2ecc71','#9b59b6','#f39c12']
+    const slots  = [-1.3, -0.55, 0.2, 0.95, 1.7]
+    const visible = Math.min(count || 4, 5)
+    return(
+        <group>
+            {Array.from({length: nF}).map((_, floor) =>
+                slots.slice(0, visible).map((wx, si) => (
+                    <group key={`stu${floor}${si}`} position={[wx, floor * fH + fH * 0.3 + 0.2, z]}>
+                        <mesh><boxGeometry args={[0.14, 0.26, 0.04]}/><meshBasicMaterial color={colors[si%colors.length]} toneMapped={false}/></mesh>
+                        <mesh position={[0, 0.22, 0]}><sphereGeometry args={[0.08, 7, 7]}/><meshBasicMaterial color="#f0c8a0" toneMapped={false}/></mesh>
+                    </group>
+                ))
+            )}
+        </group>
+    )
+}
+
+// ── Outdoor Students: animated near building entrance when powered ON ──
+const OUTDOOR_CONFIGS = [
+    { ox:-0.9, radius:0.55, speed:0.38, phase:0.0,  shirt:'#e74c3c' },
+    { ox: 0.0, radius:0.4,  speed:0.42, phase:1.2,  shirt:'#3498db' },
+    { ox: 0.9, radius:0.5,  speed:0.35, phase:2.4,  shirt:'#2ecc71' },
+    { ox:-0.4, radius:0.45, speed:0.44, phase:0.7,  shirt:'#f39c12' },
+]
+
+function OutdoorStudents({D, isPowered, studentCount=4}){
+    const grpRef = useRef()
+    const t0 = useRef(Math.random() * 100)  // random start offset per building
+
+    useFrame(s => {
+        if(!grpRef.current) return
+        const t = s.clock.elapsedTime + t0.current
+        grpRef.current.children.forEach((child, i) => {
+            if(!OUTDOOR_CONFIGS[i]) return
+            const { ox, radius, speed, phase } = OUTDOOR_CONFIGS[i]
+            const angle = t * speed + phase
+            child.position.x = ox + Math.sin(angle) * radius * 0.4
+            child.position.z = D / 2 + 1.2 + Math.cos(angle) * radius * 0.3
+            // Bob while walking
+            child.position.y = 0.1 + Math.abs(Math.sin(t * speed * 4 + phase)) * 0.04
+            // Face direction of movement
+            child.rotation.y = angle + Math.PI
+        })
+    })
+
+    if(!isPowered) return null
+    const visible = Math.min(studentCount || 3, 4)
+
+    return(
+        <group ref={grpRef}>
+            {OUTDOOR_CONFIGS.slice(0, visible).map((cfg, i) => (
+                <group key={i}>
+                    {/* Shirt */}
+                    <mesh position={[cfg.ox, 0.28, D/2 + 1.2]}>
+                        <boxGeometry args={[0.16, 0.28, 0.12]}/>
+                        <meshBasicMaterial color={cfg.shirt} toneMapped={false}/>
+                    </mesh>
+                    {/* Head */}
+                    <mesh position={[cfg.ox, 0.62, D/2 + 1.2]}>
+                        <sphereGeometry args={[0.09, 8, 8]}/>
+                        <meshBasicMaterial color="#f0c8a0" toneMapped={false}/>
+                    </mesh>
+                    {/* Left Leg */}
+                    <mesh position={[cfg.ox - 0.05, 0.07, D/2 + 1.2]}>
+                        <boxGeometry args={[0.06, 0.18, 0.07]}/>
+                        <meshBasicMaterial color="#2c3e50" toneMapped={false}/>
+                    </mesh>
+                    {/* Right Leg */}
+                    <mesh position={[cfg.ox + 0.05, 0.07, D/2 + 1.2]}>
+                        <boxGeometry args={[0.06, 0.18, 0.07]}/>
+                        <meshBasicMaterial color="#2c3e50" toneMapped={false}/>
+                    </mesh>
+                </group>
+            ))}
+        </group>
+    )
+}
+
+
 function Building({data,room,pred,onClick,isSelected}){
-  const groupRef=useRef(), beaconRef=useRef(), [hovered,setHover]=useState(false)
-  const ps=getPowerState(room), vz=getPowerVisuals(ps)
-  const {isPowered,isWarn,isOverride}=ps
-  const W=3.0,H=4.2,D=2.0,nF=3,fH=H/nF
-  const fwx=[-0.9,-0.3,0.3,0.9], swz=[-0.5,0.5]
-  const labelColor=isPowered?'#ffcc33':isWarn?'#ffb300':isOverride?'#ff4757':'#2a4060'
-  const statusTxt=isOverride?(isPowered?'OVERRIDE ON':'OVERRIDE OFF'):isPowered?'OCCUPIED':isWarn?'EMPTY SOON':'POWERED OFF'
-  useFrame(s=>{
+  const groupRef = useRef(), [hovered, setHover] = useState(false)
+  const ps = getPowerState(room)
+  const {isPowered, isWarn, isOverride} = ps
+  
+  // Realistic school building dimensions
+  const W = 4.0, H = 4.5, D = 2.8, nF = 3, fH = H / nF
+
+  const labelColor = isPowered ? '#ffcc33' : isWarn ? '#ffb300' : isOverride ? '#ff4757' : '#2a4060'
+  const statusTxt = isOverride ? (isPowered ? 'OVERRIDE ON' : 'OVERRIDE OFF') : isPowered ? 'OCCUPIED' : isWarn ? 'EMPTY SOON' : 'POWERED OFF'
+
+  // Wall: cream/white like real school, semi-transparent when ON so students show inside
+  const wallCol     = '#f0ece4'
+  const wallOpacity = isPowered ? 0.3 : 1.0   // transparent when powered so students visible
+  // Trim: slate blue like the ref image
+  const trimCol  = '#3a6ea5'
+  // Window frame / glass
+  const winFrame = '#1e4d8c'
+  const winGlass = isPowered ? '#c8e8ff' : '#1a2535'
+  const winEmit  = isPowered ? '#6aaeff' : '#000'
+  const winEmI   = isPowered ? 0.7 : 0.0
+
+  useFrame(s => {
     if(!groupRef.current) return
-    groupRef.current.position.y=hovered?0.22:Math.sin(s.clock.elapsedTime*0.9+data.pos[0]*0.18)*0.035
-    if(beaconRef.current) beaconRef.current.material.emissiveIntensity=isPowered?(Math.sin(s.clock.elapsedTime*4)>0?1:0.1):isWarn?(Math.sin(s.clock.elapsedTime*2.5)>0?0.7:0.1):isOverride?(Math.sin(s.clock.elapsedTime*2)>0?0.9:0.1):0.06
+    groupRef.current.position.y = hovered ? 0.15 : Math.sin(s.clock.elapsedTime * 0.8 + data.pos[0] * 0.15) * 0.02
   })
-  const revealInterior=isSelected||hovered
+
+  const revealInterior = isSelected || hovered
+  const FLOORS = Array.from({length: nF})
+  const WIN_X  = [-1.35, -0.62, 0.1, 0.83, 1.55]  // 5 windows per floor front/back
+  const WIN_Z  = [-0.75, 0.75]                       // 2 windows per floor side
+
   return(
-    <group position={[data.pos[0],0,data.pos[2]]} ref={groupRef} onClick={onClick} onPointerOver={()=>{setHover(true);playHover()}} onPointerOut={()=>setHover(false)}>
-      <mesh position={[0,0.08,0]}><boxGeometry args={[W+0.4,0.16,D+0.4]}/><meshStandardMaterial color="#0a1928" roughness={0.9} metalness={0.1}/></mesh>
-      <mesh position={[0,H/2+0.16,0]}>
-        <boxGeometry args={[W,H,D]}/>
-        <meshStandardMaterial color={revealInterior?'#030810':vz.bodyColor} transparent opacity={revealInterior?0.1:1} roughness={0.88} metalness={0.08} depthWrite={!revealInterior}/>
-        <Edges linewidth={isSelected?2.8:hovered?2.2:1.2} color={vz.edgeColor} opacity={isSelected?1:0.55} transparent/>
+    <group position={[data.pos[0], 0, data.pos[2]]} ref={groupRef} onClick={onClick}
+           onPointerOver={() => { setHover(true); playHover() }} onPointerOut={() => setHover(false)}>
+
+      {/* Concrete Foundation / Plinth */}
+      <mesh position={[0, 0.1, 0]}>
+        <boxGeometry args={[W + 0.5, 0.2, D + 0.5]}/>
+        <meshStandardMaterial color="#c2bab0" roughness={0.9}/>
       </mesh>
-      {Array.from({length:nF+1}).map((_,f)=><mesh key={f} position={[0,f*fH+0.16,0]}><boxGeometry args={[W+0.1,0.1,D+0.1]}/><meshStandardMaterial color="#091522" roughness={0.92}/></mesh>)}
-      {Array.from({length:nF}).map((_,f)=>[...fwx.map((wx,wi)=>(
-        <mesh key={`ff${f}${wi}`} position={[wx,f*fH+fH*0.55+0.16,D/2+0.012]}><boxGeometry args={[0.36,fH*0.52,0.04]}/><meshStandardMaterial color={vz.winColor} emissive={vz.winEmissive} emissiveIntensity={vz.winEmt} roughness={0.08} metalness={0.4}/></mesh>
-      )),...fwx.map((wx,wi)=>(
-        <mesh key={`fb${f}${wi}`} position={[wx,f*fH+fH*0.55+0.16,-D/2-0.012]} rotation={[0,Math.PI,0]}><boxGeometry args={[0.36,fH*0.52,0.04]}/><meshStandardMaterial color={vz.winColor} emissive={vz.winEmissive} emissiveIntensity={vz.winEmt} roughness={0.08} metalness={0.4}/></mesh>
-      )),...swz.flatMap((wz,wi)=>[
-        <mesh key={`fl${f}${wi}`} position={[-W/2-0.012,f*fH+fH*0.55+0.16,wz]} rotation={[0,-Math.PI/2,0]}><boxGeometry args={[0.7,fH*0.52,0.04]}/><meshStandardMaterial color={vz.winColor} emissive={vz.winEmissive} emissiveIntensity={vz.winEmt} roughness={0.08} metalness={0.4}/></mesh>,
-        <mesh key={`fr${f}${wi}`} position={[W/2+0.012,f*fH+fH*0.55+0.16,wz]} rotation={[0,Math.PI/2,0]}><boxGeometry args={[0.7,fH*0.52,0.04]}/><meshStandardMaterial color={vz.winColor} emissive={vz.winEmissive} emissiveIntensity={vz.winEmt} roughness={0.08} metalness={0.4}/></mesh>,
-      ])])}
-      <mesh position={[0,fH*0.42+0.16,D/2+0.35]}><boxGeometry args={[1.4,0.06,0.7]}/><meshStandardMaterial color="#0a1e34" roughness={0.88} metalness={0.2}/></mesh>
-      <mesh position={[0,H+0.16+0.06,0]}><boxGeometry args={[W+0.16,0.12,D+0.16]}/><meshStandardMaterial color="#071320" roughness={0.95}/></mesh>
-      <mesh position={[0,H+0.16+0.14,0]} rotation={[-Math.PI/2,0,0]}><planeGeometry args={[W-0.2,D-0.2]}/><meshBasicMaterial color={vz.roofColor} transparent opacity={vz.roofOpt} toneMapped={false}/></mesh>
-      {[[-0.6,0.3],[0.6,-0.3]].map(([rx,rz],i)=>(
-        <group key={`hv${i}`} position={[rx,H+0.16+0.22,rz]}>
-          <mesh><boxGeometry args={[0.55,0.28,0.4]}/><meshStandardMaterial color="#0c1e30" roughness={0.85} metalness={0.3}/></mesh>
-          <mesh position={[0,0.15,0]}><cylinderGeometry args={[0.1,0.12,0.1,8]}/><meshStandardMaterial color="#0a1826" roughness={0.8}/></mesh>
+
+      {/* Main Structural Wall Body — semi-transparent when powered so students inside are visible */}
+      <mesh position={[0, H/2 + 0.2, 0]}>
+        <boxGeometry args={[W, H, D]}/>
+        <meshStandardMaterial
+          color={wallCol}
+          roughness={0.85}
+          metalness={0.0}
+          transparent={isPowered}
+          opacity={wallOpacity}
+          depthWrite={!isPowered}
+        />
+      </mesh>
+
+      {/* Interior floor glow when powered — makes students stand out */}
+      {isPowered && (
+        <mesh position={[0, 0.22, 0]} rotation={[-Math.PI/2, 0, 0]}>
+          <planeGeometry args={[W - 0.3, D - 0.3]}/>
+          <meshBasicMaterial color="#ffe8a0" transparent opacity={0.18} toneMapped={false}/>
+        </mesh>
+      )}
+
+      {/* Blue Trim Band (Ground Floor Base) */}
+      <mesh position={[0, 0.5, 0]}>
+        <boxGeometry args={[W + 0.05, 0.2, D + 0.05]}/>
+        <meshStandardMaterial color={trimCol} roughness={0.7}/>
+      </mesh>
+
+      {/* Blue Trim Band (Floor Dividers) */}
+      {FLOORS.map((_, f) => f > 0 && (
+        <mesh key={`trim${f}`} position={[0, f * fH + 0.2, 0]}>
+          <boxGeometry args={[W + 0.05, 0.15, D + 0.05]}/>
+          <meshStandardMaterial color={trimCol} roughness={0.7}/>
+        </mesh>
+      ))}
+
+      {/* Rooftop Parapet (flat edge trim) */}
+      <mesh position={[0, H + 0.28, 0]}>
+        <boxGeometry args={[W + 0.18, 0.24, D + 0.18]}/>
+        <meshStandardMaterial color={trimCol} roughness={0.7}/>
+      </mesh>
+
+      {/* Flat Roof */}
+      <mesh position={[0, H + 0.42, 0]}>
+        <boxGeometry args={[W + 0.1, 0.08, D + 0.1]}/>
+        <meshStandardMaterial color="#7a8696" roughness={0.95}/>
+      </mesh>
+
+      {/* ── Windows: Front Face ── */}
+      {FLOORS.map((_, f) => WIN_X.map((wx, wi) => (
+        <group key={`wf${f}${wi}`} position={[wx, f * fH + fH * 0.52 + 0.2, D / 2 + 0.01]}>
+          {/* Frame */}
+          <mesh><boxGeometry args={[0.37, 0.62, 0.05]}/><meshStandardMaterial color={winFrame} roughness={0.4}/></mesh>
+          {/* Glass */}
+          <mesh position={[0,0,0.02]}><boxGeometry args={[0.28, 0.52, 0.02]}/><meshStandardMaterial color={winGlass} emissive={winEmit} emissiveIntensity={winEmI} roughness={0.02} metalness={0.2}/></mesh>
+          {/* Cross divider */}
+          <mesh position={[0,0,0.03]}><boxGeometry args={[0.28,0.03,0.01]}/><meshStandardMaterial color={winFrame}/></mesh>
+          <mesh position={[0,0,0.03]}><boxGeometry args={[0.03,0.52,0.01]}/><meshStandardMaterial color={winFrame}/></mesh>
+        </group>
+      )))}
+
+      {/* ── Windows: Back Face ── */}
+      {FLOORS.map((_, f) => WIN_X.slice(1,4).map((wx, wi) => (
+        <group key={`wb${f}${wi}`} position={[wx, f * fH + fH * 0.52 + 0.2, -D / 2 - 0.01]} rotation={[0, Math.PI, 0]}>
+          <mesh><boxGeometry args={[0.37, 0.62, 0.05]}/><meshStandardMaterial color={winFrame} roughness={0.4}/></mesh>
+          <mesh position={[0,0,0.02]}><boxGeometry args={[0.28, 0.52, 0.02]}/><meshStandardMaterial color={winGlass} emissive={winEmit} emissiveIntensity={winEmI} roughness={0.02} metalness={0.2}/></mesh>
+        </group>
+      )))}
+
+      {/* ── Windows: Side Faces ── */}
+      {FLOORS.map((_, f) => WIN_Z.map((wz, wi) => (
+        <group key={`ws${f}${wi}`}>
+          <group position={[-W/2-0.01, f*fH+fH*0.52+0.2, wz]} rotation={[0, -Math.PI/2, 0]}>
+            <mesh><boxGeometry args={[0.44, 0.62, 0.05]}/><meshStandardMaterial color={winFrame} roughness={0.4}/></mesh>
+            <mesh position={[0,0,0.02]}><boxGeometry args={[0.36, 0.52, 0.02]}/><meshStandardMaterial color={winGlass} emissive={winEmit} emissiveIntensity={winEmI} roughness={0.02} metalness={0.2}/></mesh>
+          </group>
+          <group position={[W/2+0.01, f*fH+fH*0.52+0.2, wz]} rotation={[0, Math.PI/2, 0]}>
+            <mesh><boxGeometry args={[0.44, 0.62, 0.05]}/><meshStandardMaterial color={winFrame} roughness={0.4}/></mesh>
+            <mesh position={[0,0,0.02]}><boxGeometry args={[0.36, 0.52, 0.02]}/><meshStandardMaterial color={winGlass} emissive={winEmit} emissiveIntensity={winEmI} roughness={0.02} metalness={0.2}/></mesh>
+          </group>
+        </group>
+      )))}
+
+      {/* ── Main Entrance (Front Center) ── */}
+      <group position={[0, 0.2, D/2]}>
+        {/* Door frame */}
+        <mesh position={[0, 0.55, 0.02]}><boxGeometry args={[0.72, 1.1, 0.08]}/><meshStandardMaterial color={trimCol} roughness={0.6}/></mesh>
+        {/* Door panels */}
+        <mesh position={[-0.17, 0.53, 0.06]}><boxGeometry args={[0.28, 0.96, 0.04]}/><meshStandardMaterial color="#d4a96a" roughness={0.7}/></mesh>
+        <mesh position={[0.17, 0.53, 0.06]}><boxGeometry args={[0.28, 0.96, 0.04]}/><meshStandardMaterial color="#d4a96a" roughness={0.7}/></mesh>
+        {/* Entrance canopy */}
+        <mesh position={[0, 1.26, 0.55]}><boxGeometry args={[1.2, 0.1, 1.1]}/><meshStandardMaterial color={trimCol} roughness={0.6}/></mesh>
+        {/* Canopy support pillars */}
+        <mesh position={[-0.52, 0.72, 0.95]}><cylinderGeometry args={[0.06, 0.06, 1.05, 8]}/><meshStandardMaterial color="#e8e0d6"/></mesh>
+        <mesh position={[0.52, 0.72, 0.95]}><cylinderGeometry args={[0.06, 0.06, 1.05, 8]}/><meshStandardMaterial color="#e8e0d6"/></mesh>
+        {/* School sign */}
+        <mesh position={[0, 1.38, 0.07]}><boxGeometry args={[0.9, 0.22, 0.04]}/><meshStandardMaterial color={trimCol}/></mesh>
+      </group>
+
+      {/* ── Rooftop HVAC Units ── */}
+      {[[-1.2, 0.4], [1.2, -0.4]].map(([rx, rz], i) => (
+        <group key={`hvac${i}`} position={[rx, H + 0.52, rz]}>
+          <mesh><boxGeometry args={[0.7, 0.3, 0.5]}/><meshStandardMaterial color="#8a9aaa" roughness={0.8}/></mesh>
+          <mesh position={[0, 0.2, 0]}><cylinderGeometry args={[0.1, 0.13, 0.18, 8]}/><meshStandardMaterial color="#6a7a8a"/></mesh>
         </group>
       ))}
-      <mesh ref={beaconRef} position={[0,H+0.16+0.6,0]}><sphereGeometry args={[0.07,8,8]}/><meshStandardMaterial color={isPowered?'#00ffaa':isWarn?'#ffb300':isOverride?'#ff4757':'#112233'} emissive={isPowered?'#00ffaa':isWarn?'#ffb300':isOverride?'#ff2233':'#001122'} emissiveIntensity={1} toneMapped={false}/></mesh>
-      {revealInterior&&<group position={[0,fH*0.5+0.16,0]}>
-        <mesh position={[0,-0.72,0]}><boxGeometry args={[2.9,0.02,1.9]}/><meshStandardMaterial color="#060d18" roughness={0.9}/></mesh>
-        <mesh position={[0,0,-0.95]}><boxGeometry args={[2.9,1.42,0.02]}/><meshStandardMaterial color="#09182a" roughness={0.9}/></mesh>
-        <mesh position={[0,0.18,-0.94]}><planeGeometry args={[1.6,0.65]}/><meshBasicMaterial color={isPowered?'#ffffff':'#0e1e30'}/></mesh>
-        {Array.from({length:8}).map((_,i)=><mesh key={i} position={[-0.8+(i%4)*0.55,-0.5,Math.floor(i/4)*0.6]}><boxGeometry args={[0.38,0.04,0.22]}/><meshStandardMaterial color="#1a2d40"/></mesh>)}
-      </group>}
-      {isPowered&&<pointLight position={[0,H/2+0.16,0]} intensity={1.2} color={isOverride?'#ff8844':'#ffaa00'} distance={5} decay={2}/>}
-      <Html position={[0,H+0.16+1.65,0]} center zIndexRange={[50,0]} occlude={false} style={{userSelect:'none',pointerEvents:'none'}}>
+
+      {/* ── Flagpole on Roof (decorative) ── */}
+      <mesh position={[W/2 - 0.2, H + 0.9, 0]}>
+        <cylinderGeometry args={[0.02, 0.02, 0.9, 6]}/>
+        <meshStandardMaterial color="#c0c0c0" metalness={0.8}/>
+      </mesh>
+
+      {/* ── Point Light (warm glow when powered) ── */}
+      {isPowered && <pointLight position={[0, fH, D/2 + 0.5]} intensity={1.8} color="#ffe8a0" distance={6} decay={2}/>}
+
+      {/* Students in Windows (visible / hidden by power state) */}
+      <InSchoolStudents count={room?.student_count} nF={nF} fH={fH} D={D} isPowered={isPowered}/>
+
+
+      {/* ── Outdoor Students near entrance (only when powered) ── */}
+      <OutdoorStudents D={D} isPowered={isPowered} studentCount={room?.student_count}/>
+
+      {/* ── Label Tag ── */}
+      <Html position={[0, H + 1.7, 0]} center zIndexRange={[50,0]} occlude={false} style={{userSelect:'none',pointerEvents:'none'}}>
         <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:3,userSelect:'none',pointerEvents:'none'}}>
           <div style={{background:'rgba(4,10,20,0.92)',border:`2px solid ${labelColor}`,borderRadius:7,padding:'3px 11px',fontFamily:'JetBrains Mono,monospace',fontSize:13,fontWeight:800,color:'#fff',boxShadow:`0 0 12px ${labelColor}66`}}>{data.id}</div>
           <div style={{background:'rgba(4,10,20,0.82)',border:`1px solid ${labelColor}55`,borderRadius:5,padding:'2px 9px',fontFamily:'JetBrains Mono,monospace',fontSize:11,fontWeight:600,color:isPowered?'#ffaa00':isWarn?'#ffb300':'#2a4060'}}>⚡ {(room?.current_power_kw||0).toFixed(1)} kW</div>
@@ -842,8 +1042,10 @@ function Building({data,room,pred,onClick,isSelected}){
           {isWarn&&pred?.predicted_empty_minutes!=null&&<div style={{background:'rgba(255,179,0,0.14)',border:'1px solid rgba(255,179,0,0.5)',borderRadius:4,padding:'1px 7px',fontSize:9,fontWeight:700,color:'#ffb300'}}>⚠ ~{pred.predicted_empty_minutes}m</div>}
         </div>
       </Html>
+
+      {/* ── Hover Detail Card ── */}
       {(hovered||isSelected)&&room&&(
-        <Html position={[0,H+0.16+3.1,0]} center zIndexRange={[100,0]}>
+        <Html position={[0, H + 3.2, 0]} center zIndexRange={[100,0]}>
           <div style={{background:'rgba(4,12,22,0.95)',border:`1px solid ${labelColor}88`,padding:'10px 14px',borderRadius:9,fontFamily:'Inter,sans-serif',boxShadow:`0 6px 24px rgba(0,0,0,0.7)`,minWidth:175,pointerEvents:'none',backdropFilter:'blur(12px)',lineHeight:1.5}}>
             <div style={{fontSize:11,fontWeight:700,color:labelColor,borderBottom:'1px solid rgba(255,255,255,0.08)',paddingBottom:5,marginBottom:7}}>{data.id} · {data.name}</div>
             {[['Students',room.student_count??'—'],['Power',`${(room.current_power_kw||0).toFixed(1)} kW`],['Lights',room.lights_on?'💡 ON':'○ OFF'],['AC',room.ac_on?'❄ ON':'○ OFF']].map(([k,v])=>(
@@ -905,7 +1107,7 @@ function PowerPole({pos}){
     )
 }
 
-// ── Power Junction Box (Structural Detail) ──
+// ── Power Junction Box ──
 function PowerJunction({pos, active=false}){
     return(
         <group position={pos}>
@@ -917,91 +1119,137 @@ function PowerJunction({pos, active=false}){
     )
 }
 
-// ── Energy Stream (Structured with L-Bends) ──
-function EnergyStream({room, start, end, label, isBackbone=false}){
-  const ps=getPowerState(room)
-  const {isPowered,isWarn}=ps
-  const isActive = isBackbone || isPowered || isWarn
-  const color = isPowered?'#ffff00':isWarn?'#ffb300':isBackbone?'#ffaa00':'#04152a'
-  const elev = 1.55 // Elevate to pylon height
 
-  // Structured L-path
-  const points = useMemo(() => {
-    const p1 = new THREE.Vector3(start[0], elev, start[2])
-    const p2 = new THREE.Vector3(end[0], elev, start[2]) // Corner
-    const p3 = new THREE.Vector3(end[0], elev, end[2])
-    const curve = new THREE.CatmullRomCurve3([p1, p2, p3], false, 'catmullrom', 0.1)
-    return curve.getPoints(30)
-  }, [start, end])
+// Electricity flows from Hub along the whole row regardless of building states.
+function RowFlow({ pathPts, speed = 0.28, color = '#ffaa00', lineWidth = 2.4 }) {
+    const pRef = useRef()
+    const points = useMemo(() => pathPts.map(p => new THREE.Vector3(...p)), [])
 
-  const pRef=useRef()
-  const speed = isBackbone ? 0.6 : isWarn?0.3:isPowered?0.8:0
+    useFrame(s => {
+        if(!pRef.current) return
+        const total = points.length - 1
+        const t = (s.clock.elapsedTime * speed) % 1
+        const fi  = t * total
+        const idx = Math.min(Math.floor(fi), total - 1)
+        const frac= fi - idx
+        pRef.current.position.lerpVectors(points[idx], points[idx + 1] || points[idx], frac)
+    })
 
-  useFrame(s=>{
-    if(!pRef.current||!isActive||speed===0) return
-    const t=(s.clock.elapsedTime*speed)%1, idx=Math.floor(t*29), pA=points[idx], pB=points[idx+1]
-    if(pA&&pB) pRef.current.position.lerpVectors(pA,pB,(t*29)%1)
-  })
-
-  return(
-    <group>
-      <Line points={points} color={color} lineWidth={isBackbone?2.2:1.4} opacity={isActive?0.7:0.12} transparent/>
-      {isActive && (
-          <mesh ref={pRef}>
-              <sphereGeometry args={[isBackbone?0.12:0.08, 8, 8]}/>
-              <meshBasicMaterial color={color} toneMapped={false}/>
-          </mesh>
-      )}
-    </group>
-  )
+    return(
+        <group>
+            {/* Static cable */}
+            <Line points={points} color={color} lineWidth={lineWidth} opacity={0.65} transparent/>
+            {/* Traveling particle */}
+            <mesh ref={pRef}>
+                <sphereGeometry args={[0.14, 8, 8]}/>
+                <meshBasicMaterial color="#ffff00" toneMapped={false}/>
+            </mesh>
+        </group>
+    )
 }
 
-// ── Smart Grid Mesh (The Interconnected Structure) ──
-function SmartGridMesh({rooms}){
-    const roomMap = Object.fromEntries(rooms.map(r=>[r.id, r]))
-    
-    // Simplified Inter-building connections (Cleared from Road)
-    const connections = [
-        // Peripheral Feeders from Hub to North/South Rows (Avoiding the road overlap)
-        { s:[22,0,-1], e:[22,0,-10], backbone:true }, // North Feeder
-        { s:[22,0,-1], e:[22,0,8], backbone:true },   // South Feeder
-        
-        // North Row Distribution (z=-10) - Horizontal links
-        { s:[22,0,-10], e:[14,0,-10], backbone:true }, 
-        { s:[14,0,-10], e:[5,0,-10], rid:'D101' },
-        { s:[5,0,-10], e:[-5,0,-10], rid:'C101' },
-        { s:[-5,0,-10], e:[-14,0,-10], rid:'B101' },
+// ── Building Power Tap ──
+// Only rendered when building is ON. Branch line + fast particle entering building.
+// Width and speed scale with actual kW demand.
+function BuildingTap({ buildingX, gridZ, buildingFrontZ, room }) {
+    const ps = getPowerState(room)
+    const { isPowered, isWarn } = ps
+    if(!isPowered && !isWarn) return null   // No branch when OFF — electricity continues forward
 
-        // South Row Distribution (z=8) - Horizontal links
-        { s:[22,0,8], e:[14,0,8], backbone:true },
-        { s:[14,0,8], e:[5,0,8], rid:'D302' },
-        { s:[5,0,8], e:[-5,0,8], rid:'C202' },
-        { s:[-5,0,8], e:[-14,0,8], rid:'B203' },
+    const kw     = room?.current_power_kw || 0
+    const color  = isPowered ? '#ffff00' : '#ffb300'
+    const lw     = isPowered ? Math.max(1.8, Math.min(kw / 4, 4.5)) : 1.2  // width = load
+    const speed  = isPowered ? Math.max(1.0, Math.min(kw / 5, 3.0)) : 0.5  // speed = demand
+    const elev   = 1.55
+
+    const pts = useMemo(() => [
+        new THREE.Vector3(buildingX, elev, gridZ),
+        new THREE.Vector3(buildingX, elev * 0.6, (gridZ + buildingFrontZ) / 2),
+        new THREE.Vector3(buildingX, 0.55, buildingFrontZ),
+    ], [buildingX, gridZ, buildingFrontZ])
+
+    const pRef = useRef()
+    useFrame(s => {
+        if(!pRef.current) return
+        const t = (s.clock.elapsedTime * speed) % 1
+        const fi  = t * 2
+        const idx = Math.min(Math.floor(fi), 1)
+        const frac= fi - idx
+        pRef.current.position.lerpVectors(pts[idx], pts[idx + 1] || pts[idx], frac)
+    })
+
+    return(
+        <group>
+            {/* Branch line: grid node → building entrance */}
+            <Line points={pts} color={color} lineWidth={lw} opacity={0.92} transparent/>
+            {/* Fast particle flowing INTO building */}
+            <mesh ref={pRef}>
+                <sphereGeometry args={[isPowered ? 0.12 : 0.08, 8, 8]}/>
+                <meshBasicMaterial color="#ffffff" toneMapped={false}/>
+            </mesh>
+            {/* Terminal glow dot at building wall */}
+            <mesh position={pts[2]}>
+                <sphereGeometry args={[0.16, 8, 8]}/>
+                <meshBasicMaterial color={color} toneMapped={false}/>
+            </mesh>
+            {isPowered && <pointLight position={pts[2]} intensity={0.8} color="#ffdd00" distance={4}/>}
+        </group>
+    )
+}
+
+// ── Smart Grid Mesh ──
+function SmartGridMesh({ rooms }) {
+    const roomMap = Object.fromEntries(rooms.map(r => [r.id, r]))
+    const elev = 1.55
+
+    // North Row: Hub → [22,-10] → [14,-10] → [5,-10] → [-5,-10] → [-14,-10]
+    const northPath = [
+        [22, elev, -1],
+        [22, elev, -10],
+        [14, elev, -10],
+        [5,  elev, -10],
+        [-5, elev, -10],
+        [-14,elev, -10],
+    ]
+
+    // South Row: Hub → [22,8] → [14,8] → [5,8] → [-5,8] → [-14,8]
+    const southPath = [
+        [22, elev, -1],
+        [22, elev, 8],
+        [14, elev, 8],
+        [5,  elev, 8],
+        [-5, elev, 8],
+        [-14,elev, 8],
     ]
 
     return (
         <group>
-            {connections.map((c, i) => (
-                <EnergyStream 
-                    key={i} 
-                    start={c.s} 
-                    end={c.e} 
-                    room={c.rid ? roomMap[c.rid] : null} 
-                    isBackbone={c.backbone}
-                />
-            ))}
-            {/* Junction Boxes and Poles - Relocated to avoid road */}
+            {/* ── Main Grid Lines: always flowing ── */}
+            <RowFlow pathPts={northPath} speed={0.25} color="#ffaa00" lineWidth={2.4}/>
+            <RowFlow pathPts={southPath} speed={0.22} color="#ffaa00" lineWidth={2.4}/>
+
+            {/* ── Building Taps: branch ONLY if building is ON ── */}
+            {/* North Row buildings — front face at z = pos[2] + D/2 ≈ -8.5 */}
+            <BuildingTap buildingX={14}  gridZ={-10} buildingFrontZ={-8.5} room={roomMap['D101']}/>
+            <BuildingTap buildingX={5}   gridZ={-10} buildingFrontZ={-8.5} room={roomMap['C101']}/>
+            <BuildingTap buildingX={-5}  gridZ={-10} buildingFrontZ={-8.5} room={roomMap['B101']}/>
+            <BuildingTap buildingX={-14} gridZ={-10} buildingFrontZ={-8.5} room={roomMap['A101']}/>
+
+            {/* South Row buildings — front face at z = pos[2] + D/2 ≈ 9.5 */}
+            <BuildingTap buildingX={14}  gridZ={8} buildingFrontZ={9.5} room={roomMap['D302']}/>
+            <BuildingTap buildingX={5}   gridZ={8} buildingFrontZ={9.5} room={roomMap['C202']}/>
+            <BuildingTap buildingX={-5}  gridZ={8} buildingFrontZ={9.5} room={roomMap['B203']}/>
+            <BuildingTap buildingX={-14} gridZ={8} buildingFrontZ={9.5} room={roomMap['A202']}/>
+
+            {/* ── Junction Boxes and Poles at grid nodes ── */}
             {[-14, -5, 5, 14, 22].map(x => (
                 <group key={x}>
-                    {/* Only place nodes on the building/hub alignment rows */}
                     <PowerJunction pos={[x, 0, -10]} active={true}/>
-                    <PowerJunction pos={[x, 0, 8]} active={true}/>
-                    
+                    <PowerJunction pos={[x, 0, 8]}   active={true}/>
                     <PowerPole pos={[x, 0, -10]}/>
                     <PowerPole pos={[x, 0, 8]}/>
                 </group>
             ))}
-            {/* Main Hub Node */}
             <PowerJunction pos={[22, 0, -1]} active={true}/>
             <PowerPole pos={[22, 0, -1]}/>
         </group>
